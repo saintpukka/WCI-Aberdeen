@@ -1,95 +1,67 @@
 import streamlit as st
-import networkx as nx
-import osmnx as ox
 import pandas as pd
+import re
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
-import folium
-from streamlit_folium import st_folium
-import re
+from geopy.distance import geodesic
 
-# Function to extract and normalize postcodes
-def extract_postcode(address):
-    postcode_pattern = r"\b[a-zA-Z]{1,2}\d{1,2}[a-zA-Z]?\s?\d[a-zA-Z]{2}\b"
-    match = re.search(postcode_pattern, address, re.IGNORECASE)
-    return match.group(0).upper().replace(" ", "") if match else None
+def standardize_address(address):
+    """Cleans and standardizes addresses to ensure proper formatting."""
+    address = address.strip().title()  # Convert to title case for consistency
+    postcode_match = re.search(r'([A-Za-z]{1,2}\d{1,2}[A-Za-z]? \d[A-Za-z]{2})$', address)
+    if postcode_match:
+        postcode = postcode_match.group(1).upper().replace(" ", "")  # Remove extra spaces
+        address = re.sub(r'([A-Za-z]{1,2}\d{1,2}[A-Za-z]? \d[A-Za-z]{2})$', postcode, address)  # Replace with formatted postcode
+    return address
 
-# Function to get latitude and longitude
-def get_lat_lon(address):
+def get_coordinates(address):
+    """Gets latitude and longitude for a given address."""
     geolocator = Nominatim(user_agent="route_planner")
     try:
-        location = geolocator.geocode(address, timeout=10)
+        location = geolocator.geocode(address)
         if location:
             return (location.latitude, location.longitude)
+        else:
+            return None
     except GeocoderTimedOut:
         return None
-    return None
 
-# Function to calculate route and travel time
-def get_optimized_route(start_address, destinations, final_destination):
-    locations = {start_address: get_lat_lon(start_address)}
-    for address in destinations:
-        locations[address] = get_lat_lon(address)
-    locations[final_destination] = get_lat_lon(final_destination)
-    
-    if any(loc is None for loc in locations.values()):
-        return "Error: One or more addresses could not be geocoded.", None
-    
-    G = ox.graph_from_point(locations[start_address], dist=20000, network_type="drive")
-    
-    nodes = {addr: ox.nearest_nodes(G, lon=loc[1], lat=loc[0]) for addr, loc in locations.items()}
-    
-    all_addresses = [start_address] + destinations + [final_destination]
-    sorted_addresses = [start_address]
-    remaining = set(destinations)
-    
-    while remaining:
-        last = sorted_addresses[-1]
-        next_stop = min(remaining, key=lambda x: nx.shortest_path_length(G, nodes[last], nodes[x], weight='length'))
-        sorted_addresses.append(next_stop)
-        remaining.remove(next_stop)
-    
-    sorted_addresses.append(final_destination)
-    
-    travel_times = []
-    speed_mps = (35 * 1000) / 3600  # Convert km/h to meters per second
-    pickup_time = 90  # 1 minute 30 seconds per stop
-    traffic_buffer = 30  # Additional buffer for traffic light
-    
-    total_time = 0
-    total_distance = 0
-    
-    for i in range(len(sorted_addresses) - 1):
-        origin, destination = sorted_addresses[i], sorted_addresses[i + 1]
-        route = nx.shortest_path(G, nodes[origin], nodes[destination], weight='length')
-        distance = sum(ox.utils_graph.get_route_edge_attributes(G, route, 'length')) / 1609.34  # Convert meters to miles
-        travel_time = (distance * 1609.34) / speed_mps + pickup_time + traffic_buffer
-        
-        total_time += travel_time
-        total_distance += distance
-        travel_times.append((origin, destination, distance, travel_time))
-    
-    return travel_times, total_time, total_distance
+def calculate_distance_time(start, stops, final):
+    """Calculates total distance and estimated travel time between locations."""
+    locations = [start] + stops + [final]
+    total_distance = 0.0
+    total_time = 0.0  # In minutes
+    travel_details = []
 
-# Streamlit UI
+    for i in range(len(locations) - 1):
+        coord1 = get_coordinates(locations[i])
+        coord2 = get_coordinates(locations[i + 1])
+        if coord1 and coord2:
+            distance = geodesic(coord1, coord2).miles
+            time = (distance / 30) * 60  # Assuming 30 mph average speed
+            total_distance += distance
+            total_time += time
+            travel_details.append([f"{locations[i]} to {locations[i+1]}", f"{distance:.2f} mi", f"{time:.0f} min"])
+        else:
+            travel_details.append([f"{locations[i]} to {locations[i+1]}", "Error", "Could not find location"])
+    return travel_details, total_distance, total_time
+
 st.title("WCI Aberdeen Route Planner")
 
-start_address = st.text_input("Enter Starting Address:")
-num_stops = st.number_input("Enter number of stops:", min_value=1, step=1, format="%d")
-destination_addresses = [st.text_input(f"Enter stop {i+1}:") for i in range(num_stops)]
-final_destination = st.text_input("Enter Final Destination:")
+start_address = st.text_input("Enter Starting Address:", "AB10 7AY")
+num_stops = st.number_input("Enter number of stops:", min_value=0, max_value=10, value=3, step=1)
+stop_addresses = [st.text_input(f"Enter stop {i+1}:") for i in range(num_stops)]
+final_destination = st.text_input("Enter Final Destination:", "60 Nelson Street AB24 5ES")
 
 if st.button("Calculate Route"):
-    travel_times, total_time, total_distance = get_optimized_route(start_address, destination_addresses, final_destination)
+    start_address = standardize_address(start_address)
+    stop_addresses = [standardize_address(stop) for stop in stop_addresses if stop.strip()]
+    final_destination = standardize_address(final_destination)
     
-    if isinstance(travel_times, str):
-        st.error(travel_times)
-    else:
-        df = pd.DataFrame(travel_times, columns=["From", "To", "Distance (mi)", "Travel Time (s)"])
-        df["Travel Time"] = df["Travel Time (s)"].apply(lambda x: f"{int(x//60)} min {int(x%60)} sec")
-        df.drop(columns=["Travel Time (s)"], inplace=True)
-        
-        st.write("### Route Summary")
-        st.dataframe(df)
-        st.write(f"**Total Distance:** {total_distance:.2f} miles")
-        st.write(f"**Total Estimated Travel Time:** {int(total_time//60)} min {int(total_time%60)} sec")
+    travel_data, total_dist, total_time = calculate_distance_time(start_address, stop_addresses, final_destination)
+    
+    df = pd.DataFrame(travel_data, columns=["Location", "Miles", "Time (min)"])
+    st.table(df)
+    
+    st.write(f"**Total Distance:** {total_dist:.2f} miles")
+    st.write(f"**Estimated Total Travel Time:** {total_time:.0f} minutes")
