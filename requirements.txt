@@ -3,3 +3,4 @@ osmnx
 networkx
 geopy
 pandas
+scikit-learn
