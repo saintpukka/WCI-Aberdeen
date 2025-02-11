@@ -102,7 +102,7 @@ st.title(" WCI Route Planner")
 # User inputs
 start_postcode = st.text_input("Enter starting postcode:")
 num_destinations = st.number_input("Enter number of destinations:", min_value=1, step=1)
-destination_postcodes = [st.text_input(f"Enter destination {i+1}:") for i in range(num_destinations)]
+destination_postcodes = [st.text_input(f"Enter postcode {i+1}:") for i in range(num_destinations)]
 final_postcode = st.text_input("Enter final destination postcode:")
 
 if st.button("Calculate Route"):
