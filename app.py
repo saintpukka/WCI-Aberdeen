@@ -72,7 +72,7 @@ def get_optimized_route(start_address, destinations, final_destination):
     return travel_times, total_time, total_distance
 
 # Streamlit UI
-st.title("Optimized Route Planner")
+st.title("WCI Aberdeen Route Planner")
 
 start_address = st.text_input("Enter Starting Address:")
 num_stops = st.number_input("Enter number of stops:", min_value=1, step=1, format="%d")
