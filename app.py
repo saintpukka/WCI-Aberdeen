@@ -5,6 +5,8 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 from datetime import datetime, timedelta
 import pandas as pd
+import folium
+from streamlit_folium import folium_static
 
 # Function to convert postcode to latitude and longitude
 def geocode_postcode(postcode, retries=3):
@@ -28,7 +30,7 @@ def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_
     # Geocode starting postcode
     start_coords = geocode_postcode(start_postcode)
     if not start_coords:
-        return "Invalid starting postcode.", None
+        return "Invalid starting postcode.", None, None
     
     # Geocode destination postcodes
     destination_coords = [(pc, geocode_postcode(pc)) for pc in destination_postcodes]
@@ -37,10 +39,10 @@ def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_
     # Geocode final destination
     final_coords = geocode_postcode(final_postcode)
     if not final_coords:
-        return "Invalid final destination.", None
+        return "Invalid final destination.", None, None
     
     if not destination_coords:
-        return "No valid destinations.", None
+        return "No valid destinations.", None, None
     
     # Get graph from OpenStreetMap for the area
     G = ox.graph_from_point(start_coords, dist=20000, network_type='drive')
@@ -59,6 +61,7 @@ def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_
     total_distance = 0
     current_node = start_node
     current_postcode = start_postcode
+    map_routes = []
     
     # Prompt for journey start time
     start_time = "08:00"  # Default time
@@ -66,13 +69,17 @@ def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_
     
     for pc, dest_node in destination_nodes:
         # Calculate distance and travel time
-        route_length_m = nx.shortest_path_length(G, current_node, dest_node, weight='length')  # in meters
+        route = nx.shortest_path(G, current_node, dest_node, weight='length')
+        route_length_m = sum(ox.utils_graph.get_route_edge_attributes(G, route, "length"))  # in meters
         route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
         travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
         total_time += travel_time + extra_delay + pickup_time
         total_distance += route_length_mi
         arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
         pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
+        
+        # Store route for mapping
+        map_routes.append(route)
         
         # Format travel details
         travel_details.append([f"{current_postcode} to {pc}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
@@ -83,21 +90,25 @@ def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_
         current_time = pickup_complete_time
     
     # Final destination calculation
-    route_length_m = nx.shortest_path_length(G, current_node, final_node, weight='length')  # in meters
+    route = nx.shortest_path(G, current_node, final_node, weight='length')
+    route_length_m = sum(ox.utils_graph.get_route_edge_attributes(G, route, "length"))  # in meters
     route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
     travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
     total_time += travel_time + extra_delay
     total_distance += route_length_mi
     arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
     
+    # Store final route for mapping
+    map_routes.append(route)
+    
     travel_details.append([f"{current_postcode} to {final_postcode}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
     
     travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
     
-    return travel_details, total_time
+    return travel_details, total_time, (G, map_routes, [start_coords] + [coord for _, coord in destination_coords] + [final_coords])
 
 # Streamlit UI
-st.title(" WCI Aberdeen Route Planner")
+st.title("WCI Aberdeen Route Planner")
 
 # User inputs
 start_postcode = st.text_input("Enter starting postcode:")
@@ -106,10 +117,28 @@ destination_postcodes = [st.text_input(f"Enter postcode {i+1}:") for i in range(
 final_postcode = st.text_input("Enter final destination postcode:")
 
 if st.button("Calculate Route"):
-    travel_details, travel_time = get_best_route(start_postcode, destination_postcodes, final_postcode)
+    travel_details, travel_time, map_data = get_best_route(start_postcode, destination_postcodes, final_postcode)
     if isinstance(travel_details, str):
         st.error(travel_details)
     else:
         df = pd.DataFrame(travel_details, columns=["Location", "Miles", "Time Taken", "Departure", "Arrival"])
         st.table(df)
         st.success(f"Total Estimated Travel Time: {round(travel_time, 2)} minutes")
+        
+        # Generate map
+        G, map_routes, locations = map_data
+        route_map = folium.Map(location=locations[0], zoom_start=12)
+
+        # Add markers for locations
+        folium.Marker(locations[0], popup="Start", icon=folium.Icon(color="green")).add_to(route_map)
+        for idx, loc in enumerate(locations[1:-1], start=1):
+            folium.Marker(loc, popup=f"Stop {idx}", icon=folium.Icon(color="blue")).add_to(route_map)
+        folium.Marker(locations[-1], popup="Final Destination", icon=folium.Icon(color="red")).add_to(route_map)
+
+        # Plot routes
+        for route in map_routes:
+            route_points = [(G.nodes[node]['y'], G.nodes[node]['x']) for node in route]
+            folium.PolyLine(route_points, color="blue", weight=3, opacity=0.7).add_to(route_map)
+
+        # Display map
+        folium_static(route_map)
