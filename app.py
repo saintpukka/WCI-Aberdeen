@@ -22,7 +22,7 @@ def geocode_postcode(postcode, retries=3):
     return None
 
 # Function to compute the best route and travel times
-def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_kmh=35, pickup_time=1.5, extra_delay=0.5):
+def get_best_route(start_postcode, destination_postcodes, final_postcode, speed_kmh=35, pickup_time=1, extra_delay=0.3):
     """Find the best route from start through multiple destinations and ending at a final destination."""
     
     # Geocode starting postcode
