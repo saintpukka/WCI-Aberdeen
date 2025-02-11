@@ -1,6 +1,7 @@
 streamlit
+folium
+streamlit-folium
 osmnx
 networkx
 geopy
 pandas
-scikit-learn
