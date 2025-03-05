@@ -21,6 +21,14 @@ def geocode_location(location, retries=3):
             continue
     return None
 
+# Function to create numbered markers
+def create_numbered_icon(number, color="blue"):
+    return folium.DivIcon(html=f"""
+    <div style="font-size: 14px; color: white; background-color: {color}; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+        {number}
+    </div>
+    """)
+
 # Function to compute the best route and travel times
 def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=35, pickup_time=1.5, extra_delay=0.5):
     """Find the best route from start through multiple destinations and ending at a final destination."""
@@ -126,18 +134,18 @@ if st.button("Calculate Route"):
                 route_map = folium.Map(location=map_center, zoom_start=12)
 
                 # Plot start point
-                folium.Marker(location=map_center, popup="Start", icon=folium.Icon(color="green", icon=f"0")).add_to(route_map)
+                folium.Marker(location=map_center, popup="Start", icon=create_numbered_icon(0, "green")).add_to(route_map)
 
                 # Plot destinations
                 for i, loc in enumerate(destination_locations, start=1):
                     coord = geocode_location(loc)
                     if coord:
-                        folium.Marker(location=coord, popup=loc, icon=folium.Icon(color="blue", icon=f"{i}")).add_to(route_map)
+                        folium.Marker(location=coord, popup=loc, icon=create_numbered_icon(i)).add_to(route_map)
 
                 # Plot final destination
                 final_coord = geocode_location(final_location)
                 if final_coord:
-                    folium.Marker(location=final_coord, popup="Final Destination", icon=folium.Icon(color="red", icon=f"{i + 1}")).add_to(route_map)
+                    folium.Marker(location=final_coord, popup="Final Destination", icon=create_numbered_icon(i + 1, "red")).add_to(route_map)
 
                 folium_static(route_map)
             else:
