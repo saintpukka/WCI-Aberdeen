@@ -54,18 +54,12 @@ def get_best_route(start_location, destination_locations, final_location, start_
     G = ox.graph_from_point(start_coords, dist=20000, network_type='drive')
 
     # Find nearest nodes to start, destinations, and final destination
-    try:
-        start_node = ox.distance.nearest_nodes(G, start_coords[1], start_coords[0])
-        destination_nodes = [(loc, ox.distance.nearest_nodes(G, lon, lat)) for loc, (lat, lon) in destination_coords]
-        final_node = ox.distance.nearest_nodes(G, final_coords[1], final_coords[0])
-    except Exception as e:
-        return f"Error finding nearest nodes: {e}", None, None
+    start_node = ox.distance.nearest_nodes(G, start_coords[1], start_coords[0])
+    destination_nodes = [(loc, ox.distance.nearest_nodes(G, lon, lat)) for loc, (lat, lon) in destination_coords]
+    final_node = ox.distance.nearest_nodes(G, final_coords[1], final_coords[0])
 
-    # Calculate shortest path distance to each destination and sort by closest
-    try:
-        destination_nodes.sort(key=lambda x: nx.shortest_path_length(G, start_node, x[1], weight='length'))
-    except Exception as e:
-        return f"Error calculating shortest paths: {e}", None, None
+    # Sort intermediate destinations based on shortest path distance from start
+    destination_nodes.sort(key=lambda x: nx.shortest_path_length(G, start_node, x[1], weight='length'))
 
     # Compute shortest paths and travel times
     travel_details = []
@@ -78,43 +72,34 @@ def get_best_route(start_location, destination_locations, final_location, start_
     current_time = datetime.strptime(start_time, "%H:%M")
 
     for i, (loc, dest_node) in enumerate(destination_nodes, start=1):
-        try:
-            # Calculate distance and travel time
-            route = nx.shortest_path(G, current_node, dest_node, weight='length')
-            route_length_m = sum(G[u][v][0]['length'] for u, v in zip(route[:-1], route[1:]))
-            route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
-            travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
-            total_time += travel_time + extra_delay + pickup_time
-            total_distance += route_length_mi
-            arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
-            pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
-
-            # Format travel details
-            travel_details.append([f"{current_location} to {loc}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
-
-            # Update current location and time
-            current_node = dest_node
-            current_location = loc
-            current_time = pickup_complete_time
-
-        except Exception as e:
-            return f"Error during route calculation: {e}", None, None
-
-    # Final destination calculation
-    try:
-        route = nx.shortest_path(G, current_node, final_node, weight='length')
-        route_length_m = sum(G[u][v][0]['length'] for u, v in zip(route[:-1], route[1:]))
-        route_length_mi = route_length_m * 0.000621371
-        travel_time = (route_length_m / 1000) / (speed_kmh / 60)
-        total_time += travel_time + extra_delay
+        # Calculate distance and travel time
+        route_length_m = nx.shortest_path_length(G, current_node, dest_node, weight='length')  # in meters
+        route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
+        travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
+        total_time += travel_time + extra_delay + pickup_time
         total_distance += route_length_mi
         arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
+        pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
 
-        travel_details.append([f"{current_location} to {final_location}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
-    
-        travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
-    except Exception as e:
-        return f"Error during final destination calculation: {e}", None, None
+        # Format travel details
+        travel_details.append([f"{current_location} to {loc}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
+
+        # Update current location and time
+        current_node = dest_node
+        current_location = loc
+        current_time = pickup_complete_time
+
+    # Final destination calculation
+    route_length_m = nx.shortest_path_length(G, current_node, final_node, weight='length')  # in meters
+    route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
+    travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
+    total_time += travel_time + extra_delay
+    total_distance += route_length_mi
+    arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
+
+    travel_details.append([f"{current_location} to {final_location}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
+
+    travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
 
     return travel_details, total_time, G
 
@@ -141,6 +126,30 @@ if st.button("Calculate Route"):
             df = pd.DataFrame(travel_details, columns=["Location", "Miles", "Time Taken", "Departure", "Arrival"])
             st.table(df)
             st.success(f"Total Estimated Travel Time: {round(travel_time, 2)} minutes")
+
+            # Generate map visualization
+            st.subheader("Route Map")
+            map_center = geocode_location(start_location)
+            if map_center:
+                route_map = folium.Map(location=map_center, zoom_start=12)
+
+                # Plot start point
+                folium.Marker(location=map_center, popup="Start", icon=create_numbered_icon(0, "green")).add_to(route_map)
+
+                # Plot destinations
+                for i, loc in enumerate(destination_locations, start=1):
+                    coord = geocode_location(loc)
+                    if coord:
+                        folium.Marker(location=coord, popup=loc, icon=create_numbered_icon(i)).add_to(route_map)
+
+                # Plot final destination
+                final_coord = geocode_location(final_location)
+                if final_coord:
+                    folium.Marker(location=final_coord, popup="Final Destination", icon=create_numbered_icon(i + 1, "red")).add_to(route_map)
+
+                folium_static(route_map)
+            else:
+                st.warning("Unable to load map due to geocoding issues.")
 
     except ValueError:
         st.error("Invalid time format. Please enter time in HH:MM format.")
