@@ -63,7 +63,7 @@ def get_best_route(start_location, destination_locations, final_location, start_
     # Convert start_time to datetime object
     current_time = datetime.strptime(start_time, "%H:%M")
 
-    for loc, dest_node in destination_nodes:
+    for i, (loc, dest_node) in enumerate(destination_nodes, start=1):
         # Calculate distance and travel time
         route_length_m = nx.shortest_path_length(G, current_node, dest_node, weight='length')  # in meters
         route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
@@ -126,18 +126,18 @@ if st.button("Calculate Route"):
                 route_map = folium.Map(location=map_center, zoom_start=12)
 
                 # Plot start point
-                folium.Marker(location=map_center, popup="Start", icon=folium.Icon(color="green")).add_to(route_map)
+                folium.Marker(location=map_center, popup="Start", icon=folium.DivIcon(html=f"<div>0</div>")).add_to(route_map)
 
                 # Plot destinations
-                for loc in destination_locations:
+                for i, loc in enumerate(destination_locations, start=1):
                     coord = geocode_location(loc)
                     if coord:
-                        folium.Marker(location=coord, popup=loc, icon=folium.Icon(color="blue")).add_to(route_map)
+                        folium.Marker(location=coord, popup=loc, icon=folium.DivIcon(html=f"<div>{i}</div>")).add_to(route_map)
 
                 # Plot final destination
                 final_coord = geocode_location(final_location)
                 if final_coord:
-                    folium.Marker(location=final_coord, popup="Final Destination", icon=folium.Icon(color="red")).add_to(route_map)
+                    folium.Marker(location=final_coord, popup="Final Destination", icon=folium.DivIcon(html=f"<div>{i + 1}</div>")).add_to(route_map)
 
                 folium_static(route_map)
             else:
