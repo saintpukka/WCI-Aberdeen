@@ -74,7 +74,7 @@ def get_best_route(start_location, destination_locations, final_location, start_
     for i, (loc, dest_node) in enumerate(destination_nodes, start=1):
         # Calculate distance and travel time
         route = nx.shortest_path(G, current_node, dest_node, weight='length')
-        route_length_m = sum(nx.get_edge_attributes(G, 'length')[edge] for edge in zip(route[:-1], route[1:]))
+        route_length_m = sum(G.get_edge_data(u, v, 0).get('length', 0) for u, v in zip(route[:-1], route[1:]))
         route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
         travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
         total_time += travel_time + extra_delay + pickup_time
@@ -92,7 +92,7 @@ def get_best_route(start_location, destination_locations, final_location, start_
 
     # Final destination calculation
     route = nx.shortest_path(G, current_node, final_node, weight='length')
-    route_length_m = sum(nx.get_edge_attributes(G, 'length')[edge] for edge in zip(route[:-1], route[1:]))
+    route_length_m = sum(G.get_edge_data(u, v, 0).get('length', 0) for u, v in zip(route[:-1], route[1:]))
     route_length_mi = route_length_m * 0.000621371
     travel_time = (route_length_m / 1000) / (speed_kmh / 60)
     total_time += travel_time + extra_delay
