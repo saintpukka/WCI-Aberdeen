@@ -58,11 +58,8 @@ def get_best_route(start_location, destination_locations, final_location, start_
     destination_nodes = [(loc, ox.distance.nearest_nodes(G, lon, lat)) for loc, (lat, lon) in destination_coords]
     final_node = ox.distance.nearest_nodes(G, final_coords[1], final_coords[0])
 
-    # Find the nearest destination to the start location
-    nearest_destination = min(destination_nodes, key=lambda x: nx.shortest_path_length(G, start_node, x[1], weight='length'))
-
-    # Only include the nearest destination
-    destination_nodes = [nearest_destination]
+    # Sort intermediate destinations based on shortest path distance from start
+    destination_nodes.sort(key=lambda x: nx.shortest_path_length(G, start_node, x[1], weight='length'))
 
     # Compute shortest paths and travel times
     travel_details = []
@@ -74,7 +71,6 @@ def get_best_route(start_location, destination_locations, final_location, start_
     # Convert start_time to datetime object
     current_time = datetime.strptime(start_time, "%H:%M")
 
-    # Only one destination (the closest one)
     for i, (loc, dest_node) in enumerate(destination_nodes, start=1):
         # Calculate distance and travel time
         route_length_m = nx.shortest_path_length(G, current_node, dest_node, weight='length')  # in meters
@@ -106,7 +102,6 @@ def get_best_route(start_location, destination_locations, final_location, start_
     travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
 
     return travel_details, total_time, G
-
 
 # Streamlit UI
 st.title("WCI Aberdeen Route Planner")
