@@ -24,7 +24,7 @@ def geocode_location(location, retries=3):
 
 # Function to compute the best route using TSP
 
-def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=35, pickup_time=1.5, extra_delay=0.5):
+def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=35, pickup_time=1, extra_delay=0.25):
     """Find the optimal route through multiple destinations ending at a final destination."""
 
     # Geocode starting location
