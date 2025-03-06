@@ -135,7 +135,7 @@ if st.button("Calculate Route"):
                         folium.Marker(
                             location=coord,
                             popup=f"{i + 1}: {loc}",
-                            icon=folium.DivIcon(html=f'<div style="font-size: 12pt; color: blue;">{i + 1}</div>')
+                            icon=folium.Icon(color="blue", icon=f"{i + 1}", prefix='fa')
                         ).add_to(route_map)
 
                 # Plot final destination
