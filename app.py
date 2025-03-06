@@ -24,7 +24,7 @@ def geocode_location(location, retries=3):
 
 # Function to compute the best route using TSP
 
-def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=35, pickup_time=1, extra_delay=0.25):
+def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=56, pickup_time=1, extra_delay=0.2):
     """Find the optimal route through multiple destinations ending at a final destination."""
 
     # Geocode starting location
@@ -108,6 +108,7 @@ def get_best_route(start_location, destination_locations, final_location, start_
 
 # Streamlit UI
 st.title("WCI Aberdeen Route Planner")
+st.markdown("<small>Address format: '23, Anywhere Street, AH23 5AH'</small>", unsafe_allow_html=True)
 
 # User inputs
 start_location = st.text_input("Enter starting postcode or address:")
