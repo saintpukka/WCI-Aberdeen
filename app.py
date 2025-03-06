@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import folium
 from streamlit_folium import folium_static
+from itertools import permutations
 
 # Function to convert postcode or address to latitude and longitude
 def geocode_location(location, retries=3):
@@ -21,9 +22,10 @@ def geocode_location(location, retries=3):
             continue
     return None
 
-# Function to compute the best route and travel times
+# Function to compute the best route using TSP
+
 def get_best_route(start_location, destination_locations, final_location, start_time, speed_kmh=35, pickup_time=1.5, extra_delay=0.5):
-    """Find the best route from start through multiple destinations and ending at a final destination."""
+    """Find the optimal route through multiple destinations ending at a final destination."""
 
     # Geocode starting location
     start_coords = geocode_location(start_location)
@@ -50,46 +52,55 @@ def get_best_route(start_location, destination_locations, final_location, start_
     destination_nodes = [(loc, ox.distance.nearest_nodes(G, lon, lat)) for loc, (lat, lon) in destination_coords]
     final_node = ox.distance.nearest_nodes(G, final_coords[1], final_coords[0])
 
-    # Sort intermediate destinations based on shortest path distance from start
-    destination_nodes.sort(key=lambda x: nx.shortest_path_length(G, start_node, x[1], weight='length'))
+    # Function to calculate the path length
+    def path_length(path):
+        length = 0
+        for i in range(len(path) - 1):
+            length += nx.shortest_path_length(G, path[i], path[i + 1], weight='length')
+        return length
+
+    # Find the best permutation of destinations
+    best_path = None
+    best_length = float("inf")
+
+    for perm in permutations(destination_nodes):
+        current_path = [start_node] + [node for _, node in perm] + [final_node]
+        current_length = path_length(current_path)
+
+        if current_length < best_length:
+            best_length = current_length
+            best_path = current_path
+            best_order = [loc for loc, _ in perm]
 
     # Compute shortest paths and travel times
     travel_details = []
     total_time = 0
     total_distance = 0
-    current_node = start_node
+
+    current_time = datetime.strptime(start_time, "%H:%M")
     current_location = start_location
 
-    # Convert start_time to datetime object
-    current_time = datetime.strptime(start_time, "%H:%M")
+    for i in range(len(best_path) - 1):
+        route_length_m = nx.shortest_path_length(G, best_path[i], best_path[i + 1], weight='length')
+        route_length_mi = route_length_m * 0.000621371
+        travel_time = (route_length_m / 1000) / (speed_kmh / 60)
 
-    for loc, dest_node in destination_nodes:
-        # Calculate distance and travel time
-        route_length_m = nx.shortest_path_length(G, current_node, dest_node, weight='length')  # in meters
-        route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
-        travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
-        total_time += travel_time + extra_delay + pickup_time
-        total_distance += route_length_mi
-        arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
-        pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
+        if i < len(best_path) - 2:
+            loc = best_order[i]
+            total_time += travel_time + extra_delay + pickup_time
+            arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
+            pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
+        else:
+            loc = final_location
+            total_time += travel_time + extra_delay
+            arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
 
-        # Format travel details
         travel_details.append([f"{current_location} to {loc}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
 
-        # Update current location and time
-        current_node = dest_node
         current_location = loc
-        current_time = pickup_complete_time
+        current_time = arrival_time if i == len(best_path) - 2 else pickup_complete_time
 
-    # Final destination calculation
-    route_length_m = nx.shortest_path_length(G, current_node, final_node, weight='length')  # in meters
-    route_length_mi = route_length_m * 0.000621371  # Convert meters to miles
-    travel_time = (route_length_m / 1000) / (speed_kmh / 60)  # Convert to minutes
-    total_time += travel_time + extra_delay
-    total_distance += route_length_mi
-    arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
-
-    travel_details.append([f"{current_location} to {final_location}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
+        total_distance += route_length_mi
 
     travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
 
@@ -125,20 +136,17 @@ if st.button("Calculate Route"):
             if map_center:
                 route_map = folium.Map(location=map_center, zoom_start=12)
 
-                # Plot start point
                 folium.Marker(location=map_center, popup="Start", icon=folium.Icon(color="green")).add_to(route_map)
 
-                # Plot destinations with numbers
-                for i, loc in enumerate(destination_locations):
-                    coord = geocode_location(loc)
+                for i, loc in enumerate(df.iloc[:-1, 0]):
+                    coord = geocode_location(loc.split(" to ")[1])
                     if coord:
                         folium.Marker(
                             location=coord,
-                            popup=f"{i + 1}: {loc}",
+                            popup=f"{i + 1}: {loc.split(' to ')[1]}",
                             icon=folium.Icon(color="blue", icon=f"{i + 1}", prefix='fa')
                         ).add_to(route_map)
 
-                # Plot final destination
                 final_coord = geocode_location(final_location)
                 if final_coord:
                     folium.Marker(location=final_coord, popup="Final Destination", icon=folium.Icon(color="red")).add_to(route_map)
