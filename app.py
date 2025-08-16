@@ -1,65 +1,66 @@
 import streamlit as st
 import googlemaps
-from datetime import datetime
+import folium
+from streamlit_folium import st_folium
 
-# Title
-st.title("🚍 Church Bus Route Planner")
-st.caption("Enter addresses in this format: '23, Anywhere Street, AH23 5AH'")
+# Google Maps API key
+API_KEY = "AIzaSyBfbGRf4pRHfF-kwQ5uL9PYQRaHtRIJzmg"
+gmaps = googlemaps.Client(key=API_KEY)
 
-# Input fields
-start = st.text_input("Starting Point")
-stops = st.text_area("Enter Stops (one per line)")
-end = st.text_input("Final Destination")
+st.title("Church Bus Route Planner")
+st.caption('Enter address in this format: "23, Anywhere Street, AH23 5AH"')
 
-# Button
-if st.button("Plan Route"):
-    if not start or not end:
-        st.error("Please enter both a starting and final destination.")
+# User inputs
+starting_point = st.text_input("Enter Starting Address")
+final_point = st.text_input("Enter Final Address")
+stops = st.text_area("Enter Stops (one per line)").splitlines()
+
+if st.button("Calculate Optimized Route"):
+    if starting_point and final_point:
+        # Optimize route using Google Maps
+        directions_result = gmaps.directions(
+            origin=starting_point,
+            destination=final_point,
+            waypoints=["optimize:true"] + stops if stops else None,
+            mode="driving"
+        )
+
+        if directions_result:
+            route = directions_result[0]['legs']
+            
+            # Create a folium map
+            m = folium.Map(location=[route[0]['start_location']['lat'], route[0]['start_location']['lng']], zoom_start=12)
+
+            # Draw route polyline
+            for leg in route:
+                steps = leg['steps']
+                for step in steps:
+                    polyline = step['polyline']['points']
+                    points = googlemaps.convert.decode_polyline(polyline)
+                    folium.PolyLine([(p['lat'], p['lng']) for p in points], color="blue", weight=3).add_to(m)
+
+            # Add markers for stops
+            for i, leg in enumerate(route):
+                folium.Marker(
+                    location=[leg['start_location']['lat'], leg['start_location']['lng']],
+                    popup=f"Stop {i+1}: {leg['start_address']}"
+                ).add_to(m)
+            
+            # Add final destination marker
+            folium.Marker(
+                location=[route[-1]['end_location']['lat'], route[-1]['end_location']['lng']],
+                popup=f"Final Destination: {route[-1]['end_address']}",
+                icon=folium.Icon(color="red")
+            ).add_to(m)
+
+            st_folium(m, width=800, height=600)
+            
+            # Show route order Google chose
+            st.subheader("Optimized Route Order:")
+            for i, leg in enumerate(route):
+                st.write(f"{i+1}. {leg['start_address']} ➝ {leg['end_address']} ({leg['distance']['text']}, {leg['duration']['text']})")
+
+        else:
+            st.error("No route found. Please check the addresses.")
     else:
-        # Setup Google Maps client
-        API_KEY = "AIzaSyBfbGRf4pRHfF-kwQ5uL9PYQRaHtRIJzmg"  # replace with your API key
-        gmaps = googlemaps.Client(key=API_KEY)
-
-        # Format stops into list
-        waypoints = [s.strip() for s in stops.split("\n") if s.strip()]
-
-        try:
-            # Call Directions API
-            directions_result = gmaps.directions(
-                origin=start,
-                destination=end,
-                waypoints=waypoints,
-                mode="driving",
-                departure_time=datetime.now()
-            )
-
-            if not directions_result:
-                st.error("No route found. Please check addresses.")
-            else:
-                # Extract route info
-                route = directions_result[0]["legs"]
-
-                # Build a summary table
-                st.subheader("📋 Route Summary")
-                for i, leg in enumerate(route):
-                    st.write(f"**Leg {i+1}:** {leg['start_address']} → {leg['end_address']}")
-                    st.write(f"- Distance: {leg['distance']['text']}")
-                    st.write(f"- Duration: {leg['duration']['text']}")
-
-                # Generate Google Maps embed URL
-                base_url = "https://www.google.com/maps/embed/v1/directions"
-                stops_str = "|".join(waypoints)
-                map_url = (
-                    f"{base_url}?key={API_KEY}"
-                    f"&origin={start}"
-                    f"&destination={end}"
-                )
-                if stops_str:
-                    map_url += f"&waypoints={stops_str}"
-
-                # Show Map in an iframe (persistent)
-                st.subheader("🗺️ Route Map")
-                st.components.v1.iframe(map_url, height=500, scrolling=True)
-
-        except Exception as e:
-            st.error(f"Error: {e}")
+        st.error("Please enter both a starting and final address.")
