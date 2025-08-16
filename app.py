@@ -5,7 +5,7 @@ import pandas as pd
 
 # Title
 st.title("🚍 Winners' Chapel Aberdeen Bus Route Planner")
-st.caption("Enter addresses in this format: '23 Anywhere Street, AH23 5AH'")
+st.caption("Enter addresses in this format: '60 Nelson Street, AB24 5ES'")
 
 # Input fields with unique keys
 start = st.text_input("Starting Destination", key="start")
@@ -95,5 +95,6 @@ if st.button("Plan Route"):
 
         except Exception as e:
             st.error(f"Error: {e}")
+
 
 
