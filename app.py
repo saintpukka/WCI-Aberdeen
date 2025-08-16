@@ -2,6 +2,8 @@ import streamlit as st
 import googlemaps
 from datetime import datetime
 import pandas as pd
+import folium
+from streamlit_folium import st_folium
 
 # Title
 st.title("🚍 Church Bus Route Planner")
@@ -16,7 +18,6 @@ if st.button("Plan Route"):
     if not start or not end:
         st.error("Please enter both a starting and final destination.")
     else:
-        # Google Maps client
         API_KEY = "AIzaSyBfbGRf4pRHfF-kwQ5uL9PYQRaHtRIJzmg"
         gmaps = googlemaps.Client(key=API_KEY)
 
@@ -66,15 +67,36 @@ if st.button("Plan Route"):
                 st.subheader("📋 Route Summary")
                 st.table(pd.DataFrame(table_data))
 
-                # Build Google Maps embed URL with optimized stops
-                base_url = "https://www.google.com/maps/embed/v1/directions"
-                stops_str = "|".join([leg["end_address"] for leg in route[:-1]])  # optimized stops
-                map_url = f"{base_url}?key={API_KEY}&origin={start}&destination={end}"
-                if stops_str:
-                    map_url += f"&waypoints={stops_str}"
+                # Create Folium map centered on first location
+                m = folium.Map(location=[route[0]["start_location"]["lat"], route[0]["start_location"]["lng"]], zoom_start=12)
+
+                # Add markers and numbered icons
+                for i, leg in enumerate(route):
+                    folium.Marker(
+                        location=[leg["start_location"]["lat"], leg["start_location"]["lng"]],
+                        popup=f"Stop {i+1}: {leg['start_address']}",
+                        icon=folium.DivIcon(
+                            html=f"""<div style='font-size:12px;color:white;background:red;border-radius:50%;width:24px;height:24px;text-align:center;'>{i+1}</div>"""
+                        )
+                    ).add_to(m)
+
+                # Add final destination marker with special color
+                folium.Marker(
+                    location=[route[-1]["end_location"]["lat"], route[-1]["end_location"]["lng"]],
+                    popup=f"Final Destination: {route[-1]['end_address']}",
+                    icon=folium.DivIcon(
+                        html=f"""<div style='font-size:12px;color:white;background:green;border-radius:50%;width:24px;height:24px;text-align:center;'>{len(route)}</div>"""
+                    )
+                ).add_to(m)
+
+                # Draw polylines for the route
+                for leg in route:
+                    for step in leg["steps"]:
+                        points = googlemaps.convert.decode_polyline(step["polyline"]["points"])
+                        folium.PolyLine([(p["lat"], p["lng"]) for p in points], color="blue", weight=3).add_to(m)
 
                 st.subheader("🗺️ Route Map")
-                st.components.v1.iframe(map_url, height=500, scrolling=True)
+                st_folium(m, width=800, height=500, key="route_map")
 
         except Exception as e:
             st.error(f"Error: {e}")
