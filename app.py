@@ -8,9 +8,9 @@ st.title("🚍 Winners' Chapel Aberdeen Bus Route Planner")
 st.caption("Enter addresses in this format: '23 Anywhere Street, AH23 5AH'")
 
 # Input fields with unique keys
-start = st.text_input("Starting Point", key="start")
+start = st.text_input("Starting Destination", key="start")
 stops_text = st.text_area("Enter Stops (one per line)", key="stops")
-end = st.text_input("Final Destination", key="end")
+end = st.text_input("Final Destination (Church)", key="end")
 
 # Starting time selector
 start_time = st.time_input("Select Starting Time", key="start_time")
@@ -95,4 +95,5 @@ if st.button("Plan Route"):
 
         except Exception as e:
             st.error(f"Error: {e}")
+
 
