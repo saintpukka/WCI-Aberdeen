@@ -1,160 +1,82 @@
 import streamlit as st
-import osmnx as ox
-import networkx as nx
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
-from datetime import datetime, timedelta
-import pandas as pd
+import requests
+import polyline
 import folium
-from streamlit_folium import folium_static
-from itertools import permutations
+from streamlit_folium import st_folium
 
-# Function to convert postcode or address to latitude and longitude
-def geocode_location(location, retries=3):
-    """Convert postcode or address to latitude and longitude with retries."""
-    geolocator = Nominatim(user_agent="route_planner", timeout=5)
-    for _ in range(retries):
-        try:
-            location = geolocator.geocode(location, addressdetails=True)
-            if location:
-                return (location.latitude, location.longitude)
-        except GeocoderTimedOut:
-            continue
-    return None
+# =========================
+# CONFIGURATION
+# =========================
+API_KEY = "AIzaSyBfbGRf4pRHfF-kwQ5uL9PYQRaHtRIJzmg"  # Replace with your actual key
 
-# Function to compute the best route using TSP
+# =========================
+# STREAMLIT APP
+# =========================
+st.title("🚍 Smart Route Planner")
+st.caption("Enter addresses in the format: `23, Anywhere Street, AH23 5AH`")
 
-def get_best_route(start_location, destination_locations, final_location, start_time, speed_mph=30, pickup_time=1, extra_delay=0.2):
-    """Find the optimal route through multiple destinations ending at a final destination."""
+# Input fields
+start = st.text_input("Starting Address")
+stops = st.text_area("Stops (one per line)")
+end = st.text_input("Final Destination")
 
-    # Geocode starting location
-    start_coords = geocode_location(start_location)
-    if not start_coords:
-        return "Invalid starting location.", None, None
+if st.button("Calculate Best Route"):
+    if start and end:
+        # Process stops into list
+        waypoints = stops.strip().split("\n") if stops.strip() else []
 
-    # Geocode destination locations
-    destination_coords = [(loc, geocode_location(loc)) for loc in destination_locations]
-    destination_coords = [(loc, coord) for loc, coord in destination_coords if coord]
+        # Build the request
+        url = f"https://maps.googleapis.com/maps/api/directions/json"
+        params = {
+            "origin": start,
+            "destination": end,
+            "waypoints": "|".join(waypoints) if waypoints else None,
+            "optimizeWaypoints": "true",  # Ensures best order
+            "mode": "driving",
+            "key": API_KEY
+        }
 
-    # Geocode final destination
-    final_coords = geocode_location(final_location)
-    if not final_coords:
-        return "Invalid final destination.", None, None
+        response = requests.get(url, params=params)
+        data = response.json()
 
-    if not destination_coords:
-        return "No valid destinations.", None, None
+        if data["status"] == "OK":
+            route = data["routes"][0]
+            legs = route["legs"]
 
-    # Get road network graph
-    G = ox.graph_from_point(start_coords, dist=20000, network_type='drive')
+            # Extract polyline points
+            points = polyline.decode(route["overview_polyline"]["points"])
 
-    # Find nearest nodes to start, destinations, and final destination
-    start_node = ox.distance.nearest_nodes(G, start_coords[1], start_coords[0])
-    destination_nodes = [(loc, ox.distance.nearest_nodes(G, lon, lat)) for loc, (lat, lon) in destination_coords]
-    final_node = ox.distance.nearest_nodes(G, final_coords[1], final_coords[0])
+            # Center map on first location
+            start_loc = legs[0]["start_location"]
+            m = folium.Map(location=[start_loc["lat"], start_loc["lng"]], zoom_start=12)
 
-    # Function to calculate the path length
-    def path_length(path):
-        length = 0
-        for i in range(len(path) - 1):
-            length += nx.shortest_path_length(G, path[i], path[i + 1], weight='length')
-        return length
+            # Draw route
+            folium.PolyLine(points, color="blue", weight=5, opacity=0.8).add_to(m)
 
-    # Find the best permutation of destinations
-    best_path = None
-    best_length = float("inf")
+            # Add markers
+            for i, leg in enumerate(legs):
+                folium.Marker(
+                    [leg["start_location"]["lat"], leg["start_location"]["lng"]],
+                    popup=f"Stop {i+1}: {leg['start_address']}"
+                ).add_to(m)
 
-    for perm in permutations(destination_nodes):
-        current_path = [start_node] + [node for _, node in perm] + [final_node]
-        current_length = path_length(current_path)
+                if i == len(legs) - 1:
+                    folium.Marker(
+                        [leg["end_location"]["lat"], leg["end_location"]["lng"]],
+                        popup=f"Final: {leg['end_address']}",
+                        icon=folium.Icon(color="red")
+                    ).add_to(m)
 
-        if current_length < best_length:
-            best_length = current_length
-            best_path = current_path
-            best_order = [loc for loc, _ in perm]
+            # Display map
+            st_map = st_folium(m, width=700, height=500)
 
-    # Compute shortest paths and travel times
-    travel_details = []
-    total_time = 0
-    total_distance = 0
+            # Show table
+            st.subheader("📍 Optimized Route")
+            for i, leg in enumerate(legs):
+                st.write(f"**{i+1}. {leg['start_address']} → {leg['end_address']}**")
+                st.write(f"Distance: {leg['distance']['text']} | Duration: {leg['duration']['text']}")
 
-    current_time = datetime.strptime(start_time, "%H:%M")
-    current_location = start_location
-
-    for i in range(len(best_path) - 1):
-        route_length_m = nx.shortest_path_length(G, best_path[i], best_path[i + 1], weight='length')
-        route_length_mi = route_length_m * 0.000621371
-        travel_time = (route_length_mi) / (speed_mph / 60)
-
-        if i < len(best_path) - 2:
-            loc = best_order[i]
-            total_time += travel_time + extra_delay + pickup_time
-            arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
-            pickup_complete_time = arrival_time + timedelta(minutes=pickup_time)
         else:
-            loc = final_location
-            total_time += travel_time + extra_delay
-            arrival_time = current_time + timedelta(minutes=travel_time + extra_delay)
-
-        travel_details.append([f"{current_location} to {loc}", f"{route_length_mi:.2f} mi", f"{travel_time + extra_delay:.2f} min", current_time.strftime('%H:%M'), arrival_time.strftime('%H:%M')])
-
-        current_location = loc
-        current_time = arrival_time if i == len(best_path) - 2 else pickup_complete_time
-
-        total_distance += route_length_mi
-
-    travel_details.append(["Total", f"{total_distance:.2f} mi", f"{total_time:.2f} min", "-", "-"])
-
-    return travel_details, total_time, G
-
-# Streamlit UI
-st.title("WCI Aberdeen Route Planner")
-st.markdown("<small>Address format: 23, Anywhere Street, AH23 5AH</small>", unsafe_allow_html=True)
-
-# User inputs
-start_location = st.text_input("Enter starting postcode or address:")
-start_time = st.text_input("Enter journey start time (HH:MM):", value="08:00")
-num_destinations = st.number_input("Enter number of destinations:", min_value=1, step=1)
-destination_locations = [st.text_input(f"Enter destination {i+1} (postcode or address):") for i in range(num_destinations)]
-final_location = st.text_input("Enter final destination (postcode or address):")
-
-if st.button("Calculate Route"):
-    try:
-        # Validate start time format
-        datetime.strptime(start_time, "%H:%M")
-
-        travel_details, travel_time, G = get_best_route(start_location, destination_locations, final_location, start_time)
-
-        if isinstance(travel_details, str):
-            st.error(travel_details)
-        else:
-            df = pd.DataFrame(travel_details, columns=["Location", "Miles", "Time Taken", "Departure", "Arrival"])
-            st.table(df)
-            st.success(f"Total Estimated Travel Time: {round(travel_time, 2)} minutes")
-
-            # Generate map visualization
-            st.subheader("Route Map")
-            map_center = geocode_location(start_location)
-            if map_center:
-                route_map = folium.Map(location=map_center, zoom_start=12)
-
-                folium.Marker(location=map_center, popup="Start", icon=folium.Icon(color="green")).add_to(route_map)
-
-                for i, loc in enumerate(df.iloc[:-1, 0]):
-                    coord = geocode_location(loc.split(" to ")[1])
-                    if coord:
-                        folium.Marker(
-                            location=coord,
-                            popup=f"{i + 1}: {loc.split(' to ')[1]}",
-                            icon=folium.Icon(color="blue", icon=f"{i + 1}", prefix='fa')
-                        ).add_to(route_map)
-
-                final_coord = geocode_location(final_location)
-                if final_coord:
-                    folium.Marker(location=final_coord, popup="Final Destination", icon=folium.Icon(color="red")).add_to(route_map)
-
-                folium_static(route_map)
-            else:
-                st.warning("Unable to load map due to geocoding issues.")
-
-    except ValueError:
-        st.error("Invalid time format. Please enter time in HH:MM format.")
+            st.error(f"Error from Google Maps API: {data['status']}")
+    else:
+        st.warning("Please enter at least a start and final destination.")
