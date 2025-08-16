@@ -2,6 +2,7 @@ import streamlit as st
 import googlemaps
 import folium
 from streamlit_folium import st_folium
+import pandas as pd
 
 # Google Maps API key
 API_KEY = "AIzaSyBfbGRf4pRHfF-kwQ5uL9PYQRaHtRIJzmg"
@@ -55,10 +56,21 @@ if st.button("Calculate Optimized Route"):
 
             st_folium(m, width=800, height=600)
             
-            # Show route order Google chose
-            st.subheader("Optimized Route Order:")
+            # Prepare table data
+            table_data = []
             for i, leg in enumerate(route):
-                st.write(f"{i+1}. {leg['start_address']} ➝ {leg['end_address']} ({leg['distance']['text']}, {leg['duration']['text']})")
+                table_data.append({
+                    "Leg": f"{i+1}",
+                    "From": leg['start_address'],
+                    "To": leg['end_address'],
+                    "Distance": leg['distance']['text'],
+                    "Duration": leg['duration']['text']
+                })
+
+            # Display table
+            st.subheader("Route Details:")
+            df = pd.DataFrame(table_data)
+            st.table(df)
 
         else:
             st.error("No route found. Please check the addresses.")
