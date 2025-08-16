@@ -54,9 +54,14 @@ if st.button("Calculate Optimized Route"):
                 icon=folium.Icon(color="red")
             ).add_to(m)
 
-            st_folium(m, width=800, height=600)
-            
-            # Prepare table data
+            # Use two columns to prevent display disappearing
+            col1, col2 = st.columns(2)
+
+            # Map on the left
+            with col1:
+                st_folium(m, width=600, height=500)
+
+            # Table on the right
             table_data = []
             for i, leg in enumerate(route):
                 table_data.append({
@@ -66,11 +71,11 @@ if st.button("Calculate Optimized Route"):
                     "Distance": leg['distance']['text'],
                     "Duration": leg['duration']['text']
                 })
-
-            # Display table
-            st.subheader("Route Details:")
             df = pd.DataFrame(table_data)
-            st.table(df)
+
+            with col2:
+                st.subheader("Route Details:")
+                st.table(df)
 
         else:
             st.error("No route found. Please check the addresses.")
